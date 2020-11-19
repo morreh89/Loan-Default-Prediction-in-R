@@ -1,0 +1,791 @@
+---
+title: "loan_default_prediction"
+author: "Bill"
+date: "11/17/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+```
+
+
+
+
+# 1. Problem Definition
+## 1.1 Defining the Question
+Create a credit scoring model to predict whether a new customer will default based on the historical data in the given dataset. Select one or several suitable learning algorithms and a suitable metric for assessing quality model.
+
+## 1.3  Defining the Metric of Success
+Since the problem we are tackling is a classification problem, we will use classification reports and confusion matrices as well as accuracy and precision scores to measure the success of the models used.
+
+## 1.4 Understanding the Context
+
+Talar is a finance app that offers microloans to its users in Kenya, Philippines and Tanzania. It uses a variety of information, from basic biographical data to the loan applications that come through daily. You work with the product team as a data scientist to help create effective credit scoring models used to assess different customer segments
+
+## 1.5 Experimental Design taken
+- load libraries and dataset
+- clean dataset:
+  - deal with duplicate and/or missing values
+  - deal with outliers, where necessary
+  - deal with other anomalies in the data, where necessary
+- carry out exploratory data analysis
+- carry out feature engineering
+- carry out modeling
+- tune hyperparameters
+- feature selection
+- alternative models
+- summarize and provide recommendations
+- challenge the solution
+
+# 2. Data Sourcing
+The dataset was obtained from the AfterWork Fellowship Program Webinar where Credit Scoring Models were being explored
+
+``` {r}
+## Loading packages that we will use during our analysis
+library("dplyr")
+library("purrr")
+library('tidyverse')
+library('magrittr')
+library('corrplot')
+library('caret')
+library('skimr')
+library(readr)
+```
+
+
+``` {r}
+
+train <- read_csv("datasets/train.csv")
+## previewing first 6 rows
+head(train)
+
+##previewing the last 6 rows of the dataset
+tail(train)
+```
+
+Description of fields:
+● id - an anonymous identifier of the applicant
+● application_dt - application submission date
+● sample_cd - sample category
+● education_cd - education
+● gender_cd - gender
+● age - age of the applicant
+● car_own_flg - vehicle presence flag
+● car_type_flg - the foreign car presence flag
+● appl_rej_cnt - the number of denied past claims
+● good_work_flg - flag for "good" work
+● Score_bki - a quick score based on data from the credit bureau
+● out_request_cnt - number of requests in the bureau
+● region_rating - rating of the region
+● home_address_cd - home address categorizer
+● work_address_cd - work address categorizer
+● income - the income of the applicant
+● SNA - the applicant's relationship with customers
+● first_time_cd - prescription of information about the applicant
+● air_flg - presence of the passport passport
+● default_flg - default credit flag - target variable
+
+
+
+``` {r}
+## Previewing the shape of our dataset
+dim(train)
+### we have 110148          rows and 19 columns!!!BAM!!
+
+#checking the datatypes on the columns 
+sapply(train, class)
+
+
+
+##checking for structure is using the str()
+str(train)
+
+## We then a statistical summary of our dataset
+
+summary(train)
+
+```
+##  DATA CLEANING
+# check for duplicated values
+
+``` {r}
+
+duplicated_rows<- train[duplicated(train),]
+
+duplicated_rows
+##  No duplicates found
+
+
+```
+
+``` {r}
+# check for missing values
+
+colSums(is.na(train))
+##dropping missing values
+train <- na.omit(train)
+colSums(is.na(train))
+
+
+```
+
+``` {r}
+# check the data types
+#in R
+sapply(train, class)
+
+
+```
+
+
+We should split the 'application_dt' variable into day and month.
+``` {r}
+#install.packages("anytime")
+library(anytime)
+train$application_dt <- anytime::anydate(train$application_dt)
+head(train)
+```
+
+
+``` {r}
+train$month <- format(train$application_dt, format="%m")
+train$day <- format(train$application_dt, format="%d")
+#check the datatypes
+tail(train)
+
+```
+
+``` {r}
+## obtaining numerical columns
+numeric_columns <- unlist(lapply(train, is.numeric))
+
+numeric_columns
+## I will put the numerical columns in a dataframe
+
+columns_numeric <- train[ , numeric_columns]
+
+head(columns_numeric)
+
+```
+
+
+
+```{r}
+# using a for lop, I will output boxplots of numerical columns..This will help me to identify the outliers
+
+par ( mfrow= c (  2, 4 ))
+for (i in 1 : length (columns_numeric)) {
+boxplot (columns_numeric[,i], main= names (columns_numeric[i]), type= "l" )
+}
+```
+_ We have outliers in our numerical columns but we wont drop them as they play a major role in our modelling
+
+
+3. EDA
+## Univariate Analysis
+
+``` {r}
+# distribution of education
+
+table(train$education_cd)
+
+```
+SCH has more applications followed by GRD
+
+``` {r}
+# exploring the 'gender_cd' variable
+table(train$gender_cd)
+
+```
+- More female apply for a loan than male
+``` {r}
+# exploring the 'age variable'
+table(train$age)
+
+```
+- Ages 31 and 30 are the most apearing ages of the applicants
+``` {r}
+# exploring the 'car_own_flg' variable
+table(train$car_own_flg)
+
+
+
+```
+
+- Most applicants do not have a car
+``` {r}
+# exploring the 'car_type_flg' variable
+table(train$car_type_flg)
+
+
+```
+``` {r}
+# exploring the 'appl_rej_cnt' variable
+table(train$appl_rej_cnt)
+
+
+```
+
+``` {r}
+# exploring the 'good_work_flg' variable
+table(train$good_work_flg)
+
+
+```
+
+``` {r}
+head(train)
+
+
+```
+``` {r}
+# plot the distribution of 'Score_bki'
+#install.packages("tidyverse")
+library(tidyverse)
+ggplot(data = train, mapping = aes(x = Score_bki)) +
+  geom_histogram(bins = 20, fill = "orange") +
+  #labs(x = "Distribution of sales") +
+  ggtitle("distribution of 'Score_bki'") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+``` {r}
+# exploring the 'out_request_cnt' variable
+# plot the distribution of 'out_request_cnt'
+#install.packages("tidyverse")
+library(tidyverse)
+ggplot(data = train, mapping = aes(x = out_request_cnt)) +
+  geom_histogram(bins = 20, fill = "orange") +
+  #labs(x = "Distribution of sales") +
+  ggtitle("distribution of 'out_request_cnt'") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+
+
+``` {r}
+# exploring the 'region_rating' variable
+table(train$region_rating)
+
+
+```
+``` {r}
+# exploring the 'region_rating' variable per default
+table(train$region_rating, train$default_flg)
+
+
+```
+
+
+
+``` {r}
+# subsetting to get the nuerical columns only
+numeric_columns <- unlist(lapply(train, is.numeric))
+numeric_columns
+
+```
+
+3.2. Bivariate Analysis
+
+- We will investigate how the target variable relates to the other variables.
+
+``` {r}
+# default_flg by application_month
+ggplot(data = train) + 
+  geom_bar(mapping = aes(x = default_flg, fill =month ), position = "dodge")
+
+```
+- Default is higher in March
+
+``` {r}
+# default_flg by gender_cd
+ggplot(data = train) + 
+  geom_bar(mapping = aes(x = default_flg, fill =gender_cd ), position = "dodge")
+
+
+```
+
+- The cases of default is higher in females compared to males
+
+``` {r}
+# default_flg by car_own_flg
+ggplot(data = train) + 
+  geom_bar(mapping = aes(x = default_flg, fill =car_own_flg ), position = "dodge")
+
+
+```
+
+- Most of who dont own a car are high risk
+
+``` {r}
+# default_flg by car_type_flg
+ggplot(data = train) + 
+  geom_bar(mapping = aes(x = default_flg, fill =car_type_flg ), position = "dodge")
+
+```
+
+- non foreign cars have most default cases
+
+``` {r}
+# default_flg by region_rating
+region_rating2 <- table(train$region_rating, train$default_flg)
+names(dimnames(region_rating2)) <- c("region_rating", "default_flg")
+region_rating2
+
+```
+
+- Region 50 has the most defaulters
+
+
+
+
+``` {r}
+# default_flg by education_Cd
+education <- table(train$education_cd, train$default_flg)
+names(dimnames(education)) <- c("education_cd", "default_flg")
+education
+
+```
+
+- 
+
+``` {r}
+# default_flg by first_time_cd
+
+first_time_cd2 <- table(train$first_time_cd, train$default_flg)
+names(dimnames(first_time_cd2)) <- c("first_time_cd2", "default_flg")
+first_time_cd2
+
+```
+
+- On the third loan most defaulted payment
+
+``` {r}
+# default_flg by Air_flg
+Air_flg2 <- table(train$Air_flg, train$default_flg)
+names(dimnames(Air_flg2)) <- c("Air_flg", "default_flg")
+Air_flg2
+
+```
+
+- Non passport holders holders were most defaulters
+
+
+# default_flg by region by outrequest
+
+``` {r}
+
+out_request1 <- table(train$default_flg, train$region_rating, train$out_request_cnt)
+names(dimnames(out_request1)) <- c("default_flg", "region_rating", "out_request_cnt")
+out_request1
+
+
+
+```
+
+
+
+```{r}
+# default_flg by age
+age2 <- table(train$age, train$default_flg)
+names(dimnames(age2)) <- c("age", "default_flg")
+age2
+
+```
+- From 26 to 31 are the most defaulters
+
+``` {r}
+# default_flg by income
+income2 <- table(train$income, train$default_flg)
+names(dimnames(income2)) <- c("income", "default_flg")
+income2
+
+```
+
+- Less than 30,000 income is a high risk
+
+
+
+##Correlation matrix of all numerical columns
+``` {r}
+
+correlations <- cor(columns_numeric, method = "pearson")
+
+round(correlations, 2)
+
+```
+``` {r}
+
+library('corrplot')
+corrplot(correlations, type = "lower", order = "hclust",tl.col = "black", tl.srt = 40)
+```
+## Observations
+Most of our colums have a weak correlation to the default_flg column
+
+
+### Feature Engineering
+
+
+``` {r}
+
+# binning our numerical variables
+# binning age
+min(train$age); max(train$age)
+age2 <- floor(runif(18, min = 21 , max = 72))
+age2
+
+# binning Score_bki
+min(train$Score_bki); max(train$Score_bki)
+Score <- floor(runif(18, min = -3.624586 , max = 0.1997729))
+Score
+
+
+# binning income
+min(train$income); max(train$income)
+income1 <- floor(runif(18, min = 1000 , max = 1e+06))
+income1
+
+
+
+
+
+
+```
+
+``` {r}
+# set day and month to factors dtype
+colnames(train)
+train$day<-as.factor(train$day)
+train$month<-as.factor(train$month)
+
+str(train)
+
+```
+``` {r}
+head(train)
+# creating dummy variables of our categorical variables via one hot encoding
+# encoding education_cd
+
+train$education_cd <- as.integer(as.factor(train$education_cd))
+# encoding gender_cd
+
+train$gender_cd <- as.integer(as.factor(train$gender_cd))
+# encoding car_own_flg
+
+train$car_own_flg <- as.integer(as.factor(train$car_own_flg))
+
+# encoding car_type_flg
+
+train$car_type_flg <- as.integer(as.factor(train$car_type_flg))
+
+# encoding Air_flg
+
+train$Air_flg <- as.integer(as.factor(train$Air_flg))
+# encoding age
+
+train$age <- as.integer(as.factor(train$age))
+# encoding Score_bki
+
+train$Score_bki <- as.integer(as.factor(train$Score_bki))
+# encoding income
+
+train$income <- as.integer(as.factor(train$income))
+train$month <- as.integer(as.factor(train$month))
+train$day <- as.integer(as.factor(train$day))
+
+head(train)
+# dropping the unneeded columns
+train$application_dt<- NULL
+head(train)
+
+```
+
+4. Modelling
+
+## KNN
+
+``` {r}
+dim(train)
+# Randomizing the rows, creates a uniform distribution of 109670
+set.seed(1234)
+random <- runif(109670)
+
+train_random <- train[order(random),]
+# Selecting the first 6 rows from iris_random
+head(train_random)
+
+
+##B4 normalizing, lets drop columns we dont need
+train_random <- subset(train_random, select = -c(1))
+head(train_random)
+# Normalizing the numerical variables of the data set. Normalizing the numerical values is really effective for algorithms, 
+# as it provides a measure from 0 to 1 which corresponds to min value to the max value of the data column.
+# We define a normal function which will normalize the set of values according to its minimum value and maximum value.
+normal <- function(x) (
+  return( ((x - min(x)) /(max(x)-min(x))) )
+)
+
+normal(1:5)
+
+##rearranging the columns
+
+
+
+train_random1<- train_random %>% relocate(default_flg, .after = last_col())
+
+head(train_random1)
+
+dim(train_random1)
+train_random1$id<- NULL
+dim(train_random1)
+
+new_train <- as.data.frame(lapply(train_random1[, c(1:18)], normal))
+
+summary(new_train)
+```
+
+``` {r}
+# Lets now create test and train data sets
+dim(new_train)
+
+train_set <- new_train[1:87736,]
+head(train_set)
+dim(train_set)
+dim(new_train)
+
+dim(train_random1)
+
+test_set <- new_train[87737:109670,]
+head(test_set)
+dim(test_set)
+dim(train_random)
+
+head(train_random1)
+
+train_knn <- train_random1[1:87736,19]
+
+
+dim(train_knn)
+
+test_knn <- train_random1[87737:109670,19]
+
+
+
+```
+
+``` {r}
+# Now we can use the K-NN algorithm. Lets call the "class" package which contains the K-NN algorithm.
+# We then have to provide 'k' value which is no. of nearest neighbours(NN) to look for 
+# in order to classify the test data point.
+# Lets build a model on it; cl is the class of the training data set and k is the no of neighbours to look for 
+# in order to classify it accordingly.
+
+library(class)    
+require(class)
+
+#model <- knn(train= train_set,test=test_set, ,cl= train_knn,k=13)
+
+train_pointsdf <- as.data.frame(train_set)
+head(train_pointsdf)
+
+train_labelsdf <- as.data.frame(train_knn)
+head(train_labelsdf)
+
+test_pointsdf <- as.data.frame(test_set)
+head(test_pointsdf)
+
+test_points_knn <- as.data.frame(test_knn)
+
+
+model <- knn(train = train_set, test = test_set,cl = train_labelsdf$default_flg, k = 30)
+
+
+table(factor(model))
+
+table(test_knn$default_flg,model)
+
+### Accuracy  of the model
+
+mean(test_knn$default_flg==model)
+
+```
+
+```
+
+ Our Knn model has an accuracy score of  87.03%
+
+## Feature Selection
+-  the FSelector Package will be used which contains functions for selecting attributes
+
+
+```  {r}
+library(FSelector)
+#From the FSelector package, the correlation coefficient as a unit of valuation is used. 
+#This would be one of the several algorithms contained 
+# in the FSelector package that can be used rank the variables
+Scores <- linear.correlation(default_flg~., train_random)
+Scores
+# From the output above, we observe a list containing 
+# rows of variables on the left and score on the right. 
+# In order to make a decision, we define a cutoff 
+# i.e. suppose we want to use the top 5 representative variables, 
+# through the use of the cutoff.k function included in the FSelector package. 
+# Alternatively, we could define our cutoff visually 
+# but in cases where there are few variables than in high dimensional datasets.
+# 
+# cutoff.k: The algorithms select a subset from a ranked attributes. 
+
+Subset <- cutoff.k(Scores, 10)
+as.data.frame(Subset)
+
+# We could also set cutoff as a percentage which would indicate 
+# that we would want to work with the percentage of the best variables.
+# ---
+#
+Subset2 <-cutoff.k.percent(Scores, 0.5)
+as.data.frame(Subset2)
+
+# Instead of using the scores for the correlation coefficient, 
+# we can use an entropy - based approach as shown below;
+# ---
+# 
+Scores2 <- information.gain(default_flg~., train_random)
+Scores2
+
+# Choosing Variables by cutoffSubset <- cutoff.k(Scores2, 5)
+Subset3 <- cutoff.k(Scores2, 10)
+as.data.frame(Subset3)
+
+
+```
+## Naives Bayes
+
+``` {r}
+
+library(caret)
+library(caretEnsemble)
+library(psych)
+library(Amelia)
+library(GGally)
+library(rpart)
+library(randomForest)
+
+```
+
+
+
+``` {r}
+# We convert the output variable into a categorical variable
+# ---
+#  
+train_random1$default_flg <- factor(train_random1$default_flg)
+str(train_random1)
+
+
+
+```
+
+
+
+
+``` {r}
+# Splitting data into training and test data sets
+# ---
+# 
+indxTrain <- createDataPartition(y = train_random1$default_flg,p = 0.75,list = FALSE)
+
+training <- train_random1[indxTrain,]
+testing <- train_random1[-indxTrain,]
+ 
+```
+
+```{r}
+# Checking dimensions of the split
+# ---
+#
+prop.table(table(train_random1$default_flg)) * 100
+prop.table(table(training$default_flg)) * 100
+prop.table(table(testing$default_flg)) * 100
+
+```
+
+
+``` {r}
+# Comparing the outcome of the training and testing phase
+# ---
+# Creating objects x which holds the predictor variables and y which holds the response variables
+# ---
+#
+
+
+x = training[,-19]
+y = training$default_flg
+```
+
+``` {r}
+# Loading our inbuilt e1071 package that holds the Naive Bayes function.
+# ---
+# 
+library(e1071)
+
+# Now building our model 
+# ---
+# 
+model = train(x,y,'nb',trControl=trainControl(method='cv',number=10))
+
+```
+
+``` {r}
+# Model Evalution
+# ---
+# Predicting our testing set
+# 
+Predict <- predict(model,newdata = testing )
+
+# Getting the confusion matrix to see accuracy value and other parameter values
+# ---
+# 
+confusionMatrix(Predict, testing$default_flg )
+```
+
+- Our Naive Bayes model has perfomed well with an accuracy score of 87.33%
+
+## Summary
+- Both our models perfomed well with Naive Bayes model having an accuracy of score 87.33% and KNN having an accuracy score of 87.03%
+-
+
+
+
+
+Recommendations
+- The company should target individuals aged 30 to 31 as they were the maximum.
+- The company should do more more research on the month of march as it had the highest default rate
+- Most applicants were from region 50, so the company should concentrate since they receive more requests from that region
+- The company to do more research on why more  women defaulted the loan provided
+- The company should do customer profiling thoroughly before giving the loans
+- The company should reduce the amount of loan given to individuals at SCH education level as they had a high risk of defaulting
+- The company should target salary earners of 30,000 and in order to reduce the default risk.
+
+6. Challenging your Solution
+a) Did we have the right question?
+- We had the right question as our model accuracy was 80% and above
+b) Did we have the right data?
+- The dataset was right as it gave us meaningful insights on the loan default project
+c) What can be done to improve the solution?
+- Add more features concerning customer profiling
+- Our dataset was large containing 110,000 rows, using models such as tensorflow would increase our model speed, computation power and accuracy
+
+
+
+
+
+
+
+
+
